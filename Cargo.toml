@@ -17,7 +17,7 @@ bliss-audio = { git = "file:///home/tuwtle/projects/bliss-rs"}
 #bliss-audio = "0.5.2"
 mpd = "0.0.12"
 rayon = "1.5.0"
-rusqlite = "0.25.0"
+rusqlite = { version = "0.25.0", features = ["array", "bundled"] }
 dirs = "3.0.1"
 tempdir = "0.3.7"
 clap = "2.33.3"

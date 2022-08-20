@@ -27,7 +27,7 @@ use mpd::song::Song as MPDSong;
 #[cfg(not(test))]
 use mpd::Client;
 use noisy_float::prelude::*;
-use rusqlite::{params, Connection, Error as RusqliteError};
+use rusqlite::{params, Connection, Error as RusqliteError, types, vtab};
 use std::char;
 use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
@@ -182,6 +182,7 @@ impl MPDLibrary {
         create_dir_all(&db_folder).with_context(|| "While creating config folder")?;
         let db_path = db_folder.join(Path::new("songs.db"));
         let sqlite_conn = Connection::open(db_path)?;
+        vtab::array::load_module(&sqlite_conn).unwrap();
         sqlite_conn.execute(
             "
             create table if not exists song (
@@ -491,6 +492,194 @@ impl MPDLibrary {
             mpd_conn.push(mpd_song)?;
         }
         Ok(())
+    }
+
+    fn paths_from_song_ids(&self, song_ids: Vec<i64>) -> BlissResult<Vec<String>> {
+        let sqlite_conn = self.sqlite_conn.lock().unwrap();
+        let mut stmt = sqlite_conn
+            .prepare(
+                "
+                select
+                    song.id, song.path
+                    from song
+                    where song.id in rarray(?);
+                ",
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+        // rarray example from the test in https://github.com/gwenn/rusqlite/blob/40ef85c2af552f1449320ac71468910d48c2c651/src/vtab/array.rs
+        // It might be less trouble to just pass in ", ".join(song_ids) if that is
+        // supported. Or just make the whole query with format!(), if less safe.
+        // It also requires the array and bundled features of rusqlite which makes the build way
+        // slower.
+        let values = song_ids.iter().map(|i| types::Value::from(i.to_owned())).collect::<Vec<types::Value>>();
+        let results = stmt
+            .query_map(
+                [std::rc::Rc::new(values)],
+                |row| -> Result<
+                    (i64, String),
+                    RusqliteError,
+                > {
+                    let song_id = row.get(0)?;
+                    let path = row.get(1)?;
+                    Ok((
+                        song_id,
+                        path,
+                    ))
+                },
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+
+        let mut result_map = HashMap::new();
+        for result in results {
+            let result = result.map_err(|e| BlissError::ProviderError(e.to_string()))?;
+            result_map.insert(result.0, result.1);
+        }
+        song_ids.iter().map(|sid|
+          // TODO: probably don't need to many to_owned()s here?
+          match result_map.to_owned().get(sid) {
+              Some(p) => Ok(p.to_owned()),
+              None => Err(BlissError::ProviderError(format!("Tried to find path for song ID '{}' which wasn't found in DB.", sid))),
+          }
+        ).collect::<BlissResult<Vec<_>>>()
+    }
+
+    fn queue_from_current_song_custom_fast<F, G>(
+        &self,
+        number_songs: usize,
+        distance: G,
+        mut sort: F,
+        dedup: bool,
+    ) -> Result<()>
+    where
+        F: FnMut(&Song, &mut Vec<Song>, G),
+        G: DistanceMetric + Copy,
+    {
+        let mut mpd_conn = self.mpd_conn.lock().unwrap();
+        mpd_conn.random(false)?;
+        let mpd_song = match mpd_conn.currentsong()? {
+            Some(s) => s,
+            None => bail!("No song is currently playing. Add a song to start the playlist from, and try again."),
+        };
+
+        let current_song = self.mpd_to_bliss_song(&mpd_song)?.with_context(|| {
+            "No song is currently playing. Add a song to start the playlist from, and try again."
+        })?;
+        let mut playlist = self.get_stored_features()?;
+        sort(&current_song, &mut playlist, distance);
+        let mut playlist = playlist.into_iter().take(number_songs).collect::<Vec<_>>();
+
+        if dedup {
+            dedup_playlist_custom_distance(&mut playlist, None, distance);
+        }
+        let current_pos = mpd_song.place.unwrap().pos;
+        mpd_conn.delete(0..current_pos)?;
+        if mpd_conn.queue()?.len() > 1 {
+            mpd_conn.delete(1..)?;
+        }
+
+        let paths = self.paths_from_song_ids(playlist.iter().filter_map(|song| {
+            // TODO: path.starts_with() doesn't work like I would expect...
+            if !song.path.to_string_lossy().starts_with("song_id:") {
+                panic!(
+                    "song seen in queue_from_current_song_custom_fast doesn't have song_id set: {}", song.path.to_string_lossy()
+                )
+                    // song seen in queue_from_current_song_custom_fast doesn't have song_id set: song_id:8089
+            }
+            // TODO: handle parse errors?
+            song.path.to_string_lossy().to_string().get(8..).unwrap().parse::<i64>().ok()
+        }).collect::<Vec<i64>>())?;
+
+        for path in &paths[1..] {
+            let mpd_song = MPDSong {
+                file: path.to_owned(),
+                ..Default::default()
+            };
+            mpd_conn.push(mpd_song)?;
+        }
+        Ok(())
+    }
+
+    /// Get stored features
+    ///
+    /// Like get_stored_songs but without getting path, title etc.
+    fn get_stored_features(&self) -> BlissResult<Vec<Song>> {
+        let sqlite_conn = self.sqlite_conn.lock().unwrap();
+        // todo: not checking for features analysed with old version on this path, in any case doing an
+        // initial `select count(*) from song where version < $1;` would be faster than querying it
+        // with every song just to do an any() check.
+        // todo: can we compile the features into a list in sqlite (eg whatever array_agg
+        // alternatives, maybe) instead of doing the loop-over-hashmap thing?
+        // todo: other queries seem to be using database order to compile the features into an
+        // array instead of using feature_index, could that be problematic
+        let mut stmt = sqlite_conn
+            .prepare(
+                "
+                select
+                    song.id, feature, feature_index
+                    from feature
+                    inner join song
+                    on song.id = feature.song_id
+                    where song.analyzed = true;
+                ",
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+        let results = stmt
+            .query_map(
+                [],
+                |row| -> Result<
+                    (i64, f32, u16),
+                    RusqliteError,
+                > {
+                    let song_id = row.get(0)?;
+                    let feature = row.get(1)?;
+                    let feature_index = row.get(2)?;
+                    Ok((
+                        song_id,
+                        feature,
+                        feature_index,
+                    ))
+                },
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+
+        let mut songs_hashmap = HashMap::new();
+        for result in results {
+            let result = result.map_err(|e| BlissError::ProviderError(e.to_string()))?;
+            let song_entry = songs_hashmap.entry(result.0.to_owned()).or_insert_with(|| {
+                (
+                    vec![],
+                    result.2.to_owned(),
+                )
+            });
+            if result.2 as usize != song_entry.0.len() {
+                warn!(
+                    "Feature index queried in wrong order: song_id={} seen_count={} this_index={}",
+                    result.0, song_entry.0.len(), result.2,
+                );
+            }
+            song_entry.0.push(result.1);
+        }
+        songs_hashmap
+            .into_iter()
+            .map(
+                |(song_id, (analysis, _feature_index))| {
+                    let array: [f32; NUMBER_FEATURES] = analysis.try_into().map_err(|_| {
+                        BlissError::ProviderError(
+                            "Too many or too little features were provided at the end of \
+                        the analysis. You might be using an older version of blissify \
+                        with a newer bliss."
+                                .to_string(),
+                        )
+                    })?;
+                    Ok(Song {
+                        // TODO: put song_id on Song instead of abusing path
+                        path: PathBuf::from(format!("song_id:{}", song_id)),
+                        analysis: Analysis::new(array),
+                        ..Default::default()
+                    })
+                },
+            )
+            .collect::<BlissResult<Vec<Song>>>()
     }
 
     /// Get songs stored in the SQLite database.
@@ -1041,7 +1230,8 @@ fn main() -> Result<()> {
                     true,
                 )?;
             } else {
-                library.queue_from_current_song_custom(
+                // TODO: _fast probably won't work with song_to_song
+                library.queue_from_current_song_custom_fast(
                     number_songs,
                     distance_metric,
                     sort,
