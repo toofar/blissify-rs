@@ -36,6 +36,7 @@ use std::io::Write;
 #[cfg(not(test))]
 use std::{io::Read, os::unix::net::UnixStream};
 
+//use rayon::prelude::*;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
@@ -404,6 +405,8 @@ impl MPDLibrary {
                         .unwrap(),
                 )
             })
+            .filter(|s| !s.ends_with("mp4"))
+            .filter(|s| !s.ends_with("m4a"))
             .collect::<Vec<String>>();
         files.sort();
         files.dedup();
@@ -566,6 +569,37 @@ fn parse_number_cores(matches: &ArgMatches) -> Result<Option<NonZeroUsize>, Blis
         .map(|x| x.parse::<NonZeroUsize>())
         .map_or(Ok(None), |r| r.map(Some))
         .map_err(|_| BlissError::ProviderError(String::from("Number of cores must be positive")))
+}
+
+pub fn safe_custom_distance(first_song: &Song, song: &Song, distance: impl DistanceMetric) -> N32 {
+
+    //n32(first_song.custom_distance(song, &distance))
+    //match first_song.custom_distance(song, &distance) {
+    //    x.is_nan() => {
+    //        println!("got a NaN distance between first={} other={}", first_song.path.display(), song.path.display());
+    //        n32(f32::INFINITY)
+    //    },
+    //    otherwise => n32(otherwise)
+    //}
+    let raw_distance = first_song.custom_distance(song, &distance);
+    if raw_distance.is_nan() {
+        println!("got a NaN distance between first={} other={}", first_song.path.display(), song.path.display());
+        n32(f32::INFINITY)
+    } else {
+        n32(raw_distance)
+    }
+}
+
+pub fn closest_to_first_song_by_key_cp<F, T>(
+    first_song: &T,
+    #[allow(clippy::ptr_arg)] songs: &mut Vec<T>,
+    distance: impl DistanceMetric,
+    key_fn: F,
+) where
+    F: Fn(&T) -> Song,
+{
+    let first_song = key_fn(first_song);
+    songs.sort_by_cached_key(|song| safe_custom_distance(first_song, &key_fn(song), &distance));
 }
 
 fn main() -> Result<()> {
@@ -783,7 +817,7 @@ fn main() -> Result<()> {
             };
 
             let sort = match sub_m.is_present("seed") {
-                false => closest_to_first_song_by_key,
+                false => closest_to_first_song_by_key_cp,
                 true => song_to_song_by_key,
             };
             if sub_m.is_present("dedup") {

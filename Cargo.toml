@@ -17,8 +17,11 @@ default = ["bliss-audio/library"]
 rpi = ["bliss-audio/rpi"]
 
 [dependencies]
-bliss-audio = "0.6.11"
+# might have to rm -rf /home/tuwtle/.cargo/git/db/bliss-rs-*
+bliss-audio = { git = "file:///home/tuwtle/projects/bliss-rs"}
+#bliss-audio = "0.6.11"
 mpd = "0.0.12"
+rayon = "1.5.0"
 dirs = "3.0.1"
 tempdir = "0.3.7"
 clap = "2.33.3"
