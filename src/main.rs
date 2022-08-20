@@ -8,7 +8,8 @@
 //! --playlist.
 use anyhow::{bail, Context, Result};
 use bliss_audio::playlist::{
-    closest_album_to_group, closest_to_first_song, cosine_distance, dedup_playlist,
+    // closest_album_to_group, closest_to_first_song, cosine_distance, dedup_playlist,
+    closest_album_to_group, cosine_distance, dedup_playlist,
     dedup_playlist_custom_distance, euclidean_distance, song_to_song, DistanceMetric,
 };
 use bliss_audio::{
@@ -39,6 +40,7 @@ use std::sync::{Arc, Mutex};
 use std::io;
 use std::io::Write;
 
+//use rayon::prelude::*;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 
@@ -330,6 +332,8 @@ impl MPDLibrary {
                     .unwrap()
                     .to_owned()
             })
+            .filter(|s| !s.ends_with("mp4"))
+            .filter(|s| !s.ends_with("m4a"))
             .collect::<Vec<String>>();
         info!("Found {} new songs to analyze.", to_analyze.len());
         self.analyze_paths_showprogress(to_analyze)?;
@@ -856,6 +860,30 @@ impl MPDLibrary {
     }
 }
 
+pub fn safe_custom_distance(first_song: &Song, song: &Song, distance: impl DistanceMetric) -> N32 {
+
+    //n32(first_song.custom_distance(song, &distance))
+    //match first_song.custom_distance(song, &distance) {
+    //    x.is_nan() => {
+    //        println!("got a NaN distance between first={} other={}", first_song.path.display(), song.path.display());
+    //        n32(f32::INFINITY)
+    //    },
+    //    otherwise => n32(otherwise)
+    //}
+    let raw_distance = first_song.custom_distance(song, &distance);
+    if raw_distance.is_nan() {
+        println!("got a NaN distance between first={} other={}", first_song.path.display(), song.path.display());
+        n32(f32::INFINITY)
+    } else {
+        n32(raw_distance)
+    }
+}
+
+pub fn closest_to_first_song_cp(first_song: &Song, songs: &mut Vec<Song>, distance: impl DistanceMetric + std::marker::Sync) {
+    //songs.par_sort_by_cached_key(|song| safe_custom_distance(first_song, song, &distance));
+    songs.sort_by_cached_key(|song| safe_custom_distance(first_song, song, &distance));
+}
+
 fn main() -> Result<()> {
     env_logger::init_from_env(env_logger::Env::default().filter_or("RUST_LOG", "warn"));
 
@@ -1002,7 +1030,7 @@ fn main() -> Result<()> {
             };
 
             let sort = match sub_m.is_present("seed") {
-                false => closest_to_first_song,
+                false => closest_to_first_song_cp,
                 true => song_to_song,
             };
             if sub_m.is_present("dedup") {
