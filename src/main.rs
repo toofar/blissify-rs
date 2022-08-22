@@ -306,8 +306,8 @@ impl MPDLibrary {
 
     /// Update blissify database by analyzing the paths that are listed
     /// by MPD but not currently in the database.
-    fn update(&mut self) -> Result<()> {
-        let stored_songs = self.get_stored_paths()?;
+    fn update(&mut self, force: bool) -> Result<()> {
+        let stored_songs = self.get_stored_paths(force)?;
 
         let mpd_songs = {
             let mut mpd_conn = self.mpd_conn.lock().unwrap();
@@ -780,21 +780,25 @@ impl MPDLibrary {
             )
             .collect::<BlissResult<Vec<Song>>>()
     }
+
     /// Get stored song paths
     ///
-    /// Like get_stored_songs but without getting path, title, features etc
-    fn get_stored_paths(&self) -> BlissResult<HashSet<String>> {
+    /// Get all known paths from the DB. With `analyzed_only` return only paths for songs that we
+    /// have successfully analysed.
+    fn get_stored_paths(&self, analyzed_only: bool) -> BlissResult<HashSet<String>> {
         let sqlite_conn = self.sqlite_conn.lock().unwrap();
         // TODO: exclude and warn about entries with a different feature version
+        let where_clause = match analyzed_only {
+            true => "where song.analyzed = true",
+            false => "",
+        };
         let mut stmt = sqlite_conn
             .prepare(
-                "
+                &format!("
                 select
                     path from song
-                    -- todo make conditional based on param
-                    -- where song.analyzed = true
-                    ;
-                ",
+                    {};
+                ", where_clause),
             )
             .map_err(|e| BlissError::ProviderError(e.to_string()))?;
         let results = stmt
@@ -1137,6 +1141,12 @@ fn main() -> Result<()> {
                 .help("MPD base path. The value of `music_directory` in your mpd.conf.")
                 .required(true)
             )
+            .arg(Arg::with_name("force")
+                .long("force")
+                .help(
+                    "Also re-process any songs that previously encountered errors in processing"
+                )
+            )
         )
         .subcommand(
             SubCommand::with_name("playlist")
@@ -1229,7 +1239,7 @@ fn main() -> Result<()> {
     } else if let Some(sub_m) = matches.subcommand_matches("update") {
         let base_path = sub_m.value_of("MPD_BASE_PATH").unwrap();
         let mut library = MPDLibrary::new(base_path.to_string())?;
-        library.update()?;
+        library.update(sub_m.is_present("force"))?;
     } else if let Some(sub_m) = matches.subcommand_matches("playlist") {
         let number_songs = match sub_m.value_of("PLAYLIST_LENGTH").unwrap().parse::<usize>() {
             Err(_) => {
