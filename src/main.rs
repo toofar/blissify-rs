@@ -595,6 +595,7 @@ impl MPDLibrary {
             })
             .filter(|s| !s.ends_with("mp4"))
             .filter(|s| !s.ends_with("m4a"))
+            .filter(|s| !s.contains(".cue/"))
             .collect::<Vec<String>>();
         files.sort();
         files.dedup();
