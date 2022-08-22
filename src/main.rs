@@ -13,7 +13,7 @@ use bliss_audio::playlist::{
     dedup_playlist_custom_distance, euclidean_distance, song_to_song, DistanceMetric,
 };
 use bliss_audio::{
-    analyze_paths, Analysis, BlissError, BlissResult, Song, FEATURES_VERSION, NUMBER_FEATURES,
+    analyze_paths, Analysis, BlissError, BlissResult, Song, NUMBER_FEATURES,
 };
 use clap::{App, Arg, SubCommand};
 #[cfg(not(test))]
@@ -307,12 +307,7 @@ impl MPDLibrary {
     /// Update blissify database by analyzing the paths that are listed
     /// by MPD but not currently in the database.
     fn update(&mut self) -> Result<()> {
-        let stored_songs = self
-            .get_stored_songs()?
-            .iter()
-            .filter(|x| x.features_version == FEATURES_VERSION)
-            .map(|x| x.path.to_str().unwrap().to_owned())
-            .collect::<HashSet<String>>();
+        let stored_songs = self.get_stored_paths()?;
 
         let mpd_songs = {
             let mut mpd_conn = self.mpd_conn.lock().unwrap();
@@ -784,6 +779,44 @@ impl MPDLibrary {
                 },
             )
             .collect::<BlissResult<Vec<Song>>>()
+    }
+    /// Get stored song paths
+    ///
+    /// Like get_stored_songs but without getting path, title, features etc
+    fn get_stored_paths(&self) -> BlissResult<HashSet<String>> {
+        let sqlite_conn = self.sqlite_conn.lock().unwrap();
+        // TODO: exclude and warn about entries with a different feature version
+        let mut stmt = sqlite_conn
+            .prepare(
+                "
+                select
+                    path from song
+                    -- todo make conditional based on param
+                    -- where song.analyzed = true
+                    ;
+                ",
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+        let results = stmt
+            .query_map(
+                [],
+                |row| -> Result<
+                    (String,),
+                    RusqliteError,
+                > {
+                    let path = row.get(0)?;
+                    Ok((
+                        path,
+                    ))
+                },
+            )
+            .map_err(|e| BlissError::ProviderError(e.to_string()))?;
+        let mut paths = HashSet::new();
+        for result in results {
+            let result = result.map_err(|e| BlissError::ProviderError(e.to_string()))?;
+            paths.insert(result.0.to_owned());
+        }
+        return Ok(paths);
     }
 
     /// Get the song's paths from the MPD database.
