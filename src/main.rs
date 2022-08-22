@@ -335,6 +335,7 @@ impl MPDLibrary {
             })
             .filter(|s| !s.ends_with("mp4"))
             .filter(|s| !s.ends_with("m4a"))
+            .filter(|s| !s.contains(".cue/"))
             .collect::<Vec<String>>();
         info!("Found {} new songs to analyze.", to_analyze.len());
         self.analyze_paths_showprogress(to_analyze)?;
