@@ -880,7 +880,7 @@ fn main() -> Result<()> {
                 .long("distance")
                 .value_name("distance metric")
                 .help(
-                    "Choose the distance metric used to make the playlist. Default is 'euclidean',\
+                    "Choose the distance metric used to make the playlist. Default is 'euclidean', \
                     other option is 'cosine'"
                 )
                 .default_value("euclidean")
@@ -888,8 +888,8 @@ fn main() -> Result<()> {
             .arg(Arg::with_name("seed")
                 .long("seed-song")
                 .help(
-                    "Instead of making a playlist of only the closest song to the current song,\
-                    make a playlist that queues the closest song to the first song, then
+                    "Instead of making a playlist of only the closest song to the current song, \
+                    make a playlist that queues the closest song to the first song, then \
                     the closest to the second song, etc. Can take some time to build."
                 )
                 .takes_value(false)
@@ -897,7 +897,7 @@ fn main() -> Result<()> {
             .arg(Arg::with_name("dedup")
                 .long("deduplicate-songs")
                 .help(
-                    "Deduplicate songs based both on the title / artist and their\
+                    "Deduplicate songs based both on the title / artist and their \
                      sheer proximity."
                 )
                 .takes_value(false)
