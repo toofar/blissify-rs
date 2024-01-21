@@ -748,7 +748,12 @@ fn main() -> Result<()> {
         if let Some(cores) = number_cores {
             library.library.config.set_number_cores(cores)?;
         };
-        let paths = library.get_songs_paths()?;
+        let paths = library.get_songs_paths()?.into_iter()
+            .filter(|s| !s.ends_with("mp4"))
+            .filter(|s| !s.ends_with("m4a"))
+            .filter(|s| !s.contains(".cue/"))
+            .filter(|s| !s.contains(".zip/"))
+            .collect::<Vec<_>>();
         library.library.update_library(paths, true, true)?;
     } else if let Some(sub_m) = matches.subcommand_matches("playlist") {
         let number_songs = match sub_m.value_of("PLAYLIST_LENGTH").unwrap().parse::<usize>() {
