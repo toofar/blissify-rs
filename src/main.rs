@@ -9,7 +9,8 @@
 use anyhow::{bail, Context, Result};
 use bliss_audio::library::{AppConfigTrait, BaseConfig, Library, LibrarySong};
 use bliss_audio::playlist::{
-    closest_to_first_song_by_key, cosine_distance, euclidean_distance, song_to_song_by_key,
+    //closest_to_first_song_by_key,
+    cosine_distance, euclidean_distance, song_to_song_by_key,
     DistanceMetric,
 };
 use bliss_audio::{BlissError, BlissResult, Song};
@@ -788,7 +789,7 @@ pub fn closest_to_first_song_by_key_cp<F, T>(
     F: Fn(&T) -> Song,
 {
     let first_song = key_fn(first_song);
-    songs.sort_by_cached_key(|song| safe_custom_distance(first_song, &key_fn(song), &distance));
+    songs.sort_by_cached_key(|song| safe_custom_distance(&first_song, &key_fn(song), &distance));
 }
 
 fn main() -> Result<()> {

@@ -18,7 +18,8 @@ rpi = ["bliss-audio/rpi"]
 
 [dependencies]
 # might have to rm -rf /home/tuwtle/.cargo/git/db/bliss-rs-*
-bliss-audio = { git = "file:///home/tuwtle/projects/bliss-rs"}
+#bliss-audio = { git = "file:///home/tuwtle/projects/bliss-rs", branch="feat/raise_decoding_errors"}
+bliss-audio = { path = "/home/tuwtle/projects/bliss-rs" }
 #bliss-audio = "0.6.11"
 mpd = "0.0.12"
 rayon = "1.5.0"
