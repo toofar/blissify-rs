@@ -355,7 +355,8 @@ impl MPDLibrary {
         };
         let path = self.mpd_to_bliss_path(&mpd_song)?;
 
-        let playlist = self.library.playlist_from_custom_fast(
+        //let playlist = self.library.playlist_from_custom_fast(
+        let playlist = self.library.playlist_from_custom(
             &path.to_string_lossy().clone(),
             number_songs,
             distance,
