@@ -367,8 +367,14 @@ impl MPDLibrary {
         let paths = paths.iter().map(|s| &**s).collect::<Vec<&str>>();
         let playlist =
             self.library
-                .playlist_from_custom(&paths, number_songs, distance, sort_by, dedup)?;
-        for song in &playlist {
+                .playlist_from_custom(
+                    &paths,
+                    number_songs + paths.len(),
+                    distance,
+                    sort_by,
+                    dedup,
+                )?;
+        for song in &playlist[paths.len()..] {
             let mpd_song = self.bliss_song_to_mpd(song)?;
             mpd_conn.push(mpd_song)?;
         }
@@ -798,10 +804,10 @@ fn main() -> Result<()> {
 
             let default_forest_options = ForestOptions::default();
             let distance: &dyn DistanceMetricBuilder = match sub_m.value_of("distance") {
-                Some("extended_isolation_forest") | None => &default_forest_options,
-            Some("euclidean_distance") => &euclidean_distance,
-            Some("cosine_distance") => &cosine_distance,
-            Some(_) => bail!("Please choose a distance name, between 'extended_isolation_forest', 'euclidean' and 'cosine'.")
+                Some("extended_isolation_forest") => &default_forest_options,
+                Some("euclidean") | None => &euclidean_distance,
+                Some("cosine") => &cosine_distance,
+                Some(_) => bail!("Please choose a distance name, between 'extended_isolation_forest', 'euclidean' and 'cosine'.")
             };
             library.queue_from_current_playlist(
                 number_songs,

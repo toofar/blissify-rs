@@ -17,7 +17,7 @@ default = ["bliss-audio/library"]
 rpi = ["bliss-audio/rpi"]
 
 [dependencies]
-bliss-audio = { "git"="https://github.com/SimonTeixidor/bliss-rs.git", branch="multi-track-playlist-source" }
+bliss-audio = { "path"="../bliss-rs" }
 mpd = "0.0.12"
 dirs = "3.0.1"
 tempdir = "0.3.7"

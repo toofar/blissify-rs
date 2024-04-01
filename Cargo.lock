@@ -102,7 +102,6 @@ checksum = "327762f6e5a765692301e5bb513e0d9fef63be86bbc14528052b1cd3e6f03e07"
 [[package]]
 name = "bliss-audio"
 version = "0.6.11"
-source = "git+https://github.com/SimonTeixidor/bliss-rs.git?branch=multi-track-playlist-source#e0ffd31cd09cfbd3783b373d39d088eb61d86029"
 dependencies = [
  "adler32",
  "anyhow",
