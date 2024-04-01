@@ -864,7 +864,7 @@ fn main() -> Result<()> {
                     "Choose the distance metric used to make the playlist. Default is 'extended_isolation_forest',\
                     other options are 'cosine', and 'euclidean'"
                 )
-                .default_value("extended_isolation_forest")
+                .default_value("euclidean")
             )
             .arg(Arg::with_name("sort")
                 .long("sort")
@@ -997,9 +997,9 @@ fn main() -> Result<()> {
             let default_forest_options = ForestOptions::default();
             let distance: &dyn DistanceMetricBuilder = match sub_m.value_of("distance") {
                 Some("extended_isolation_forest") => &default_forest_options,
-                Some("euclidean") | None => &euclidean_distance,
+                Some("euclidean") => &euclidean_distance,
                 Some("cosine") => &cosine_distance,
-                Some(_) => bail!("Please choose a distance name, between 'extended_isolation_forest', 'euclidean' and 'cosine'.")
+                Some(_) | None => bail!("Please choose a distance name, between 'extended_isolation_forest', 'euclidean' and 'cosine'.")
             };
             library.queue_from_current_playlist(
                 number_songs,
